@@ -406,13 +406,15 @@ if st.session_state.auth["logged_in"]:
             cf.delivery_mode,
             ad.apprif_no,
             ad.total_fees,
-            p.name AS first_passport_name,
-            p.passport_number AS first_passport_number
+            p.first_passport_name,
+            p.first_passport_number
         FROM tbl_ClientFees cf
         JOIN tbl_Case c ON cf.case_id = c.case_id
         LEFT JOIN tbl_ApplicationDetails ad ON cf.case_id = ad.case_id
         LEFT JOIN (
-            SELECT pp.case_id, pp.name, pp.passport_number
+            SELECT pp.case_id, 
+                pp.name || ' ' || pp.surname AS first_passport_name,
+                pp.passport_number AS first_passport_number
             FROM tbl_Passport pp
             INNER JOIN (
                 SELECT case_id, MIN(passport_id) AS min_passport_id
