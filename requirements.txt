@@ -1,3 +1,4 @@
+streamlit_option_menu
 acres
 aiofiles
 altair
