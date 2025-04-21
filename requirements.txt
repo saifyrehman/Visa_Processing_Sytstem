@@ -1,5 +1,6 @@
 --extra-index-url https://pypi.org/simple
 pip>=24.0
+distutils-pytest
 acres==0.3.0
 aiofiles==24.1.0
 altair==4.2.2
@@ -166,6 +167,7 @@ smmap==5.0.2
 snowflake-connector-python==3.12.4
 SQLAlchemy==2.0.36
 sqlparse==0.5.3
+
 
 # Streamlit and its extensions
 streamlit==1.41.1
