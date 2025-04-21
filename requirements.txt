@@ -143,12 +143,7 @@ python-bidi
 python-dateutil
 python-decouple
 python-dotenv
-pytz
-PyWavelets
-pywin32
-pywinpty
-PyYAML
-pyzmq
+
 qrcode
 rdflib
 regex
