@@ -394,22 +394,34 @@ if st.session_state.auth["logged_in"]:
     if selected == "Dashboard":
         st.subheader("📈 Dashboard Overview")
         df = pd.read_sql_query('''
-            SELECT 
-                cf.client_id, 
-                cf.case_id, 
-                c.case_status AS status, 
-                cf.applicant_name, 
-                cf.contact_number, 
-                cf.total_payment_received, 
-                cf.expense_amount, 
-                cf.other_expenses, 
-                cf.delivery_mode,
-                ad.apprif_no,
-                ad.total_fees
-            FROM tbl_ClientFees cf
-            JOIN tbl_Case c ON cf.case_id = c.case_id
-            LEFT JOIN tbl_ApplicationDetails ad ON cf.case_id = ad.case_id
-        ''', conn)
+        SELECT 
+            cf.client_id, 
+            cf.case_id, 
+            c.case_status AS status, 
+            cf.applicant_name, 
+            cf.contact_number, 
+            cf.total_payment_received, 
+            cf.expense_amount, 
+            cf.other_expenses, 
+            cf.delivery_mode,
+            ad.apprif_no,
+            ad.total_fees,
+            p.name AS first_passport_name,
+            p.passport_number AS first_passport_number
+        FROM tbl_ClientFees cf
+        JOIN tbl_Case c ON cf.case_id = c.case_id
+        LEFT JOIN tbl_ApplicationDetails ad ON cf.case_id = ad.case_id
+        LEFT JOIN (
+            SELECT pp.case_id, pp.name, pp.passport_number
+            FROM tbl_Passport pp
+            INNER JOIN (
+                SELECT case_id, MIN(passport_id) AS min_passport_id
+                FROM tbl_Passport
+                GROUP BY case_id
+            ) grouped_pp ON pp.passport_id = grouped_pp.min_passport_id
+        ) p ON cf.case_id = p.case_id
+    ''', conn)
+
 
         if df.empty:
             st.info("No records found.")
@@ -433,22 +445,79 @@ if st.session_state.auth["logged_in"]:
         status_counts = df['status'].value_counts()
         st.bar_chart(status_counts)
 
-        st.subheader("📄 Case-wise Financial Summary")
-        st.dataframe(df[[
-            "applicant_name", "contact_number", "case_id", "status",
+        
+
+        export_df = df[[
+            "case_id", "first_passport_name", "first_passport_number", "apprif_no",
+            "applicant_name", "contact_number", "status",
             "total_payment_received", "application_fee", "expense_amount", "net_total"
-        ]])
+        ]].rename(columns={
+            "case_id": "Case Number",
+            "first_passport_name": "Head Contact Name",
+            "first_passport_number": "Head Passport Number",
+            "apprif_no": "Apprif #",
+            "applicant_name": "Applicant Name",
+            "contact_number": "Applicant Contact Number",
+            "status": "Status",
+            "total_payment_received": "Total Payment Received",
+            "application_fee": "Application Fee",
+            "expense_amount": "Total Expense",
+            "net_total": "Net Total"
+        })
+
+        st.subheader("📄 Case-wise Financial Summary")        
+        st.dataframe(export_df, use_container_width=True)
 
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False, sheet_name='ClientFeesSummary')
+            export_df.to_excel(writer, index=False, sheet_name='ClientFeesSummary')
+            workbook = writer.book
+            worksheet = writer.sheets['ClientFeesSummary']
 
+            # Define formats
+            header_format = workbook.add_format({
+                'bold': True,
+                'font_name': 'Arial',
+                'font_size': 14,
+                'border': 1,
+                'align': 'center',
+                'valign': 'vcenter',
+                'bg_color': '#D9E1F2'
+            })
+            cell_format = workbook.add_format({
+                'font_name': 'Arial',
+                'font_size': 14,
+                'border': 1
+            })
+
+            # Apply header format
+            for col_num, value in enumerate(export_df.columns.values):
+                worksheet.write(0, col_num, value, header_format)
+
+            # Apply cell format
+            for row_num in range(1, len(export_df) + 1):
+                for col_num in range(len(export_df.columns)):
+                    worksheet.write(row_num, col_num, export_df.iloc[row_num - 1, col_num], cell_format)
+
+            # Optional: Autofit columns
+            for i, column in enumerate(export_df.columns):
+                column_width = max(export_df[column].astype(str).map(len).max(), len(column)) + 2
+                worksheet.set_column(i, i, column_width)
+
+        # Streamlit download button
         st.download_button(
             label="📥 Download Excel",
             data=buffer,
             file_name=f"Client_Fees_Summary_{datetime.now().date()}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+        # st.download_button(
+        #     label="📥 Download Excel",
+        #     data=buffer,
+        #     file_name=f"Client_Fees_Summary_{datetime.now().date()}.xlsx",
+        #     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        # )
 
     
     # STEP 1: Case Details
@@ -507,6 +576,7 @@ if st.session_state.auth["logged_in"]:
             st.session_state.current_case = None
             st.session_state.edit_mode = False
             st.session_state.new_case = True
+            st.session_state.generated_case_id = generate_case_id()  # <-- Store case ID here
             st.rerun()
 
         # Form starts here
@@ -514,12 +584,13 @@ if st.session_state.auth["logged_in"]:
            
 
 
-            if st.session_state.case.get("current_case"):
+            if st.session_state.get("current_case"):
                 case_id = st.text_input("Case Number", value=st.session_state.current_case['case_id'], disabled=True)
                 edit_mode = True
             else:
-                case_id = generate_case_id()
-                st.text_input("Case Number", value=case_id, disabled=True)
+                if "generated_case_id" not in st.session_state:
+                    st.session_state.generated_case_id = generate_case_id()
+                case_id = st.text_input("Case Number", value=st.session_state.generated_case_id, disabled=True)
                 edit_mode = False
             
             
@@ -530,11 +601,11 @@ if st.session_state.auth["logged_in"]:
                                         disabled=True)
         
 
-            case_type = st.selectbox("Case Type", ["Family Visit", "Business", "Other"],
+            case_type = st.selectbox("Visa Category", ["Family Visit", "Business", "Other"],
                                     index=["Family Visit", "Business", "Other"].index(
                                         st.session_state.current_case['case_type']) if st.session_state.get("current_case") else 0)
 
-            case_mode = st.selectbox("Case Mode", ["Single", "Multiple"],
+            case_mode = st.selectbox("Visa Type", ["Single", "Multiple"],
                                     index=["Single", "Multiple"].index(
                                         st.session_state.current_case['case_mode']) if st.session_state.get("current_case") else 0)
 
@@ -549,9 +620,9 @@ if st.session_state.auth["logged_in"]:
                                     index=["Need to process", "In process", "Completed"].index(
                                         st.session_state.current_case['case_status']) if st.session_state.get("current_case") else 0)
 
-            processed_by = st.text_input("Processed By",
-                                        value=st.session_state.current_case['processed_by']
-                                        if st.session_state.get("current_case") else "")
+            # processed_by = st.text_input("Processed By",
+            #                             value=st.session_state.current_case['processed_by']
+            #                             if st.session_state.get("current_case") else "")
 
             col1, col2, col3 = st.columns(3)
         
