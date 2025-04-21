@@ -1,6 +1,6 @@
 --extra-index-url https://pypi.org/simple
 pip>=24.0
-distutils-pytest
+distutils
 acres==0.3.0
 aiofiles==24.1.0
 altair==4.2.2
