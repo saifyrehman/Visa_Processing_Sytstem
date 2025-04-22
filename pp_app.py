@@ -19,6 +19,20 @@ import io
 import hashlib
 import secrets
 from werkzeug.security import generate_password_hash, check_password_hash
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from bidi.algorithm import get_display
+import arabic_reshaper
+# from arabic_reshaper import arabic
+
+from reportlab.lib.units import inch, mm
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.lib.enums import TA_RIGHT, TA_LEFT, TA_CENTER
+
 
 # ---------- DATABASE SETUP ----------
 conn = sqlite3.connect("passport_cases_2.db", check_same_thread=False)
@@ -76,6 +90,8 @@ def create_tables():
                     created_date TEXT,
                     case_status TEXT,
                     processed_by TEXT)''')
+    
+    # c.execute('''ALTER TABLE tbl_Case ADD COLUMN report_printed INTEGER DEFAULT 0''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS tbl_Passport (
                     passport_id TEXT PRIMARY KEY,
@@ -188,6 +204,255 @@ def init_session_state():
         }
 
 init_session_state()
+
+
+
+
+
+####### ---------- REPORT DEFINATION ----------#####
+
+
+
+def arabic(text):
+    return get_display(arabic_reshaper.reshape(text))
+
+
+def calculate_column_widths(data, headers, arabic_headers, font_name='DejaVu', font_size=10):
+    # Initialize column widths based on header lengths
+    col_widths = [0] * len(headers)
+    
+    # Calculate widths for English headers
+    for i, header in enumerate(headers):
+        col_widths[i] = max(col_widths[i], len(header) * font_size * 0.6)  # Approximate width
+    
+    # Calculate widths for Arabic headers
+    for i, header in enumerate(arabic_headers):
+        col_widths[i] = max(col_widths[i], len(header) * font_size * 0.6)  # Arabic characters might be wider
+    
+    # Calculate widths for data rows
+    for _, row in data.iterrows():
+        for i, key in enumerate(["case_type", "apprif_no", "case_mode", "case_id", "total_fees", "total_payment_received"]):
+            value = str(row.get(key, ""))
+            col_widths[i] = max(col_widths[i], len(value) * font_size * 0.6)
+    
+    # Add some padding
+    col_widths = [width + 20 for width in col_widths]
+    
+    # Set minimum and maximum widths
+    min_width = 40
+    max_width = 120
+    col_widths = [max(min_width, min(width, max_width)) for width in col_widths]
+    
+    return col_widths
+def generate_visa_report_pdf(filename, data):
+    # Register fonts
+    pdfmetrics.registerFont(TTFont("Arabic", "./ttf/NotoNaskhArabic-Regular.ttf"))
+    pdfmetrics.registerFont(TTFont("DejaVu", "./ttf/DejaVuSansCondensed.ttf"))
+    pdfmetrics.registerFont(TTFont("DejaVu-Bold", "./ttf/DejaVuSansCondensed-Bold.ttf"))
+
+    # Create document
+    doc = SimpleDocTemplate(filename, pagesize=A4, 
+                          leftMargin=15*mm, rightMargin=15*mm,
+                          topMargin=10*mm, bottomMargin=15*mm)
+    elements = []
+    
+    # Custom styles
+    styles = getSampleStyleSheet()
+    
+    # Title styles
+    title_style_en = ParagraphStyle(
+        name='TitleStyleEn', 
+        fontName='DejaVu-Bold', 
+        fontSize=18, 
+        alignment=TA_CENTER,
+        textColor=colors.HexColor("#2c3e50"),
+        spaceAfter=4
+    )
+    
+    title_style_ar = ParagraphStyle(
+        name='TitleStyleAr', 
+        fontName='Arabic', 
+        fontSize=16, 
+        alignment=TA_CENTER,
+        textColor=colors.HexColor("#2c3e50"),
+        spaceAfter=12
+    )
+    
+    # Subtitle styles
+    subtitle_style_en = ParagraphStyle(
+        name='SubtitleStyleEn', 
+        fontName='DejaVu-Bold', 
+        fontSize=14, 
+        alignment=TA_CENTER,
+        textColor=colors.HexColor("#3498db"),
+        spaceAfter=6
+    )
+    
+    subtitle_style_ar = ParagraphStyle(
+        name='SubtitleStyleAr', 
+        fontName='Arabic', 
+        fontSize=12, 
+        alignment=TA_CENTER,
+        textColor=colors.HexColor("#3498db"),
+        spaceAfter=12
+    )
+    
+    # Header styles
+    header_style = ParagraphStyle(
+        name='HeaderStyle',
+        fontName='DejaVu-Bold',
+        fontSize=10,
+        textColor=colors.white,
+        alignment=TA_CENTER
+    )
+    
+    # Field name style
+    field_style = ParagraphStyle(
+        name='FieldStyle',
+        fontName='DejaVu-Bold',
+        fontSize=10,
+        textColor=colors.HexColor("#2c3e50"),
+        alignment=TA_LEFT
+    )
+    
+    # Arabic label style
+    arabic_label_style = ParagraphStyle(
+        name='ArabicLabelStyle',
+        fontName='Arabic',
+        fontSize=10,
+        textColor=colors.HexColor("#2c3e50"),
+        alignment=TA_RIGHT
+    )
+    
+    # Value style
+    value_style = ParagraphStyle(
+        name='ValueStyle',
+        fontName='DejaVu',
+        fontSize=10,
+        textColor=colors.HexColor("#34495e"),
+        alignment=TA_LEFT
+    )
+    
+    # Metadata style
+    meta_style = ParagraphStyle(
+        name='MetaStyle',
+        fontName='DejaVu',
+        fontSize=9,
+        textColor=colors.HexColor("#7f8c8d"),
+        alignment=TA_LEFT,
+        spaceAfter=12
+    )
+    
+    # Add company header with logo placeholder
+    elements.append(Paragraph("MRI Pvt. Ltd", title_style_en))
+    elements.append(Paragraph(arabic("ام آر آئی پرائیویٹ لمیٹڈ"), title_style_ar))
+    
+    # Add decorative line
+    elements.append(Spacer(1, 2))
+    elements.append(Table(
+        [[""]], 
+        colWidths=[doc.width], 
+        style=[('LINEABOVE', (0,0), (-1,-1), 1, colors.HexColor("#3498db"))]
+    ))
+    elements.append(Spacer(1, 8))
+    
+    # Add service title
+    elements.append(Paragraph("Visa Services Facilitation for Saudia", subtitle_style_en))
+    elements.append(Paragraph(arabic("سعودی عرب کے لیے ویزا سروسز کی سہولت"), subtitle_style_ar))
+    elements.append(Spacer(1, 12))
+    
+    # Entry Date & Receipt
+    created_date = data["created_date"].iloc[0]
+    cashier = data["processed_by"].iloc[0]
+    
+    meta_table = Table([
+        [Paragraph(f"<b>Entry Date:</b> {created_date}", meta_style), 
+         Paragraph(f"<b>Cashier Receipt:</b> {cashier}", meta_style)]
+    ], colWidths=[doc.width/2, doc.width/2])
+    
+    elements.append(meta_table)
+    
+    # Arabic labels mapping
+    arabic_labels = {
+        "Visa Centre": arabic("ویزا سینٹر"),
+        "Apprif No.": arabic("اپریف نمبر"),
+        "Visa Type": arabic("ویزا کی قسم"),
+        "Case No.": arabic("کیس نمبر"),
+        "Receipt by App": arabic("رسید درخواست دہندہ سے"),
+        "Amount by Cash": arabic("نقدی میں رقم")
+    }
+    
+    # Get the first row of data
+    row = data.iloc[0]
+    
+    # Create vertical table data
+    table_data = [
+        [
+            Paragraph("<b>Field</b>", header_style),
+            Paragraph(arabic("<b>العنوان</b>"), header_style),
+            Paragraph("<b>Value</b>", header_style)
+        ]
+    ]
+    
+    # Add data rows
+    fields = [
+        ("Visa Centre", "case_type"),
+        ("Apprif No.", "apprif_no"),
+        ("Visa Type", "case_mode"),
+        ("Case No.", "case_id"),
+        ("Receipt by App", "total_fees"),
+        ("Amount by Cash", "total_payment_received")
+    ]
+    
+    for field_name, data_key in fields:
+        table_data.append([
+            Paragraph(field_name, field_style),
+            Paragraph(arabic_labels[field_name], arabic_label_style),
+            Paragraph(str(row.get(data_key, "")), value_style)
+        ])
+    
+    # Table styling
+    table = Table(table_data, colWidths=[100, 120, doc.width-220])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#3498db")),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('FONTNAME', (0,0), (0,-1), 'DejaVu-Bold'),
+        ('FONTNAME', (1,0), (1,-1), 'Arabic'),
+        ('FONTSIZE', (0,0), (-1,-1), 10),
+        ('BOTTOMPADDING', (0,0), (-1,0), 8),
+        ('BOTTOMPADDING', (0,1), (-1,-1), 6),
+        ('TOPPADDING', (0,1), (-1,-1), 6),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#ecf0f1")),
+        ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor("#bdc3c7")),
+    ]))
+    
+    elements.append(table)
+    elements.append(Spacer(1, 20))
+    
+    # Add footer
+    footer_text = "Thank you for choosing our services. For any inquiries, please contact our support team."
+    elements.append(Paragraph(footer_text, ParagraphStyle(
+        name='FooterStyle',
+        fontName='DejaVu',
+        fontSize=9,
+        textColor=colors.HexColor("#7f8c8d"),
+        alignment=TA_CENTER
+    )))
+    
+    # Add Arabic footer
+    elements.append(Paragraph(arabic("خدماتنا اختيار لكم شكرا. أي استفسارات، يرجى الاتصال بفريق الدعم لدينا."), ParagraphStyle(
+        name='FooterStyleAr',
+        fontName='Arabic',
+        fontSize=9,
+        textColor=colors.HexColor("#7f8c8d"),
+        alignment=TA_CENTER
+    )))
+    
+    # Build the document
+    doc.build(elements)
+
 # ---------- USER INTERFACE COMPONENTS ----------
 def login_form():
     with st.form("login_form"):
@@ -369,6 +634,8 @@ with st.sidebar:
         menu_options = ["Dashboard", "Step 1: Case Details", "Step 2: Passport Extraction", 
                         "Step 3: Application Info", "Step 4: Client Fees"]
         
+        menu_options.append("Case Receipt")
+
         if user["role"] == "admin":
             menu_options.append("User Management")
         
@@ -1182,3 +1449,56 @@ if st.session_state.auth["logged_in"]:
                     if st.form_submit_button("Cancel"):
                         st.session_state.user_management_mode = "view"
                         st.rerun()
+
+    
+    elif selected == "Case Receipt":
+        st.subheader("👥 Case Receipt")
+        search_type = st.selectbox("Search by", ["Passport Number", "Application Number", "Apprif Number"])
+        search_value = st.text_input(f"Enter {search_type}").strip()
+
+        if "search_result" not in st.session_state:
+            st.session_state.search_result = pd.DataFrame()
+
+        if st.button("Search"):
+            query = ""
+            if search_type == "Passport Number":
+                query = """SELECT ca.*, pp.passport_number, ad.apprif_no, ad.application_no, ad.total_fees, 
+                                cf.total_payment_received, cf.payment_mode, cf.bank_number
+                        FROM tbl_Case ca
+                        LEFT JOIN tbl_Passport pp ON ca.case_id = pp.case_id
+                        LEFT JOIN tbl_ApplicationDetails ad ON ca.case_id = ad.case_id
+                        LEFT JOIN tbl_ClientFees cf ON ca.case_id = cf.case_id
+                        WHERE pp.passport_number = ?"""
+            elif search_type == "Application Number":
+                query = "SELECT * FROM tbl_ApplicationDetails WHERE application_no = ?"
+            elif search_type == "Apprif Number":
+                query = "SELECT * FROM tbl_ApplicationDetails WHERE apprif_no = ?"
+
+            result = pd.read_sql_query(query, conn, params=(search_value,))
+            st.session_state.search_result = result  # store result
+
+        result = st.session_state.search_result
+
+        if not result.empty:
+            case_id = result["case_id"].iloc[0]
+            printed = c.execute("SELECT report_printed FROM tbl_Case WHERE case_id = ?", (case_id,)).fetchone()[0]
+            # printed = 0
+            if printed:
+                st.warning("⚠️ This report has already been printed and cannot be reprinted.")
+            else:
+                st.dataframe(result)
+
+                if st.button("🖨️ Print Report", key="print_btn"):
+                    st.write("🧪 Print button clicked")
+                    filename = f"Visa_Report_{case_id}.pdf"
+                    generate_visa_report_pdf(filename, result)
+                    c.execute("UPDATE tbl_Case SET report_printed = 1 WHERE case_id = ?", (case_id,))
+                    conn.commit()
+                    with open(filename, "rb") as f:
+                        st.download_button("Download Report", data=f, file_name=filename, mime="application/pdf")
+        else:
+            st.error("No records found.")
+
+
+
+
