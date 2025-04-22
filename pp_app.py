@@ -344,8 +344,8 @@ def generate_visa_report_pdf(filename, data):
     )
     
     # Add company header with logo placeholder
-    elements.append(Paragraph("MRI Pvt. Ltd", title_style_en))
-    elements.append(Paragraph(arabic("ام آر آئی پرائیویٹ لمیٹڈ"), title_style_ar))
+    elements.append(Paragraph("MRT Pvt. Ltd", title_style_en))
+    elements.append(Paragraph(arabic("ام آر ٹی پرائیویٹ لمیٹڈ"), title_style_ar))
     
     # Add decorative line
     elements.append(Spacer(1, 2))
@@ -378,7 +378,7 @@ def generate_visa_report_pdf(filename, data):
         "Apprif No.": arabic("اپریف نمبر"),
         "Visa Type": arabic("ویزا کی قسم"),
         "Case No.": arabic("کیس نمبر"),
-        "Receipt by App": arabic("رسید درخواست دہندہ سے"),
+        # "Receipt by App": arabic("رسید درخواست دہندہ سے"),
         "Amount by Cash": arabic("نقدی میں رقم")
     }
     
@@ -400,7 +400,7 @@ def generate_visa_report_pdf(filename, data):
         ("Apprif No.", "apprif_no"),
         ("Visa Type", "case_mode"),
         ("Case No.", "case_id"),
-        ("Receipt by App", "total_fees"),
+        # ("Receipt by App", "total_fees"),
         ("Amount by Cash", "total_payment_received")
     ]
     
