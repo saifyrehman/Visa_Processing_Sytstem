@@ -932,9 +932,9 @@ if st.session_state.auth["logged_in"]:
                     update_case(case_data)
                     st.success("Case updated successfully!")
                 else:
-                    c.execute("INSERT INTO tbl_Case VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    c.execute("INSERT INTO tbl_Case VALUES (?, ?, ?, ?, ?, ?, ?,?)",
                             (case_id, case_type, case_mode, num_persons,
-                            created_date.strftime('%Y-%m-%d'), case_status, processed_by))
+                            created_date.strftime('%Y-%m-%d'), case_status, processed_by,0))
                     conn.commit()
                     st.success(f"Case saved with ID: {case_id}")
                 
@@ -1450,16 +1450,40 @@ if st.session_state.auth["logged_in"]:
                         st.session_state.user_management_mode = "view"
                         st.rerun()
 
-    
     elif selected == "Case Receipt":
         st.subheader("👥 Case Receipt")
         search_type = st.selectbox("Search by", ["Passport Number", "Application Number", "Apprif Number"])
-        search_value = st.text_input(f"Enter {search_type}").strip()
+
+        # Fetch options based on selected type
+        dropdown_options = []
+        if search_type == "Passport Number":
+            dropdown_options = [row[0] for row in c.execute("""
+                SELECT DISTINCT pp.passport_number 
+                FROM tbl_Passport pp
+                JOIN tbl_Case ca ON ca.case_id = pp.case_id 
+                WHERE ca.report_printed = 0 AND pp.passport_number IS NOT NULL
+            """).fetchall()]
+        elif search_type == "Application Number":
+            dropdown_options = [row[0] for row in c.execute("""
+                SELECT DISTINCT ad.application_no 
+                FROM tbl_ApplicationDetails ad
+                JOIN tbl_Case ca ON ca.case_id = ad.case_id
+                WHERE ca.report_printed = 0 AND ad.application_no IS NOT NULL
+            """).fetchall()]
+        elif search_type == "Apprif Number":
+            dropdown_options = [row[0] for row in c.execute("""
+                SELECT DISTINCT ad.apprif_no 
+                FROM tbl_ApplicationDetails ad
+                JOIN tbl_Case ca ON ca.case_id = ad.case_id
+                WHERE ca.report_printed = 0 AND ad.apprif_no IS NOT NULL
+            """).fetchall()]
+
+        search_value = st.selectbox(f"Select {search_type}", dropdown_options) if dropdown_options else None
 
         if "search_result" not in st.session_state:
             st.session_state.search_result = pd.DataFrame()
 
-        if st.button("Search"):
+        if search_value and st.button("Search"):
             query = ""
             if search_type == "Passport Number":
                 query = """SELECT ca.*, pp.passport_number, ad.apprif_no, ad.application_no, ad.total_fees, 
@@ -1470,35 +1494,44 @@ if st.session_state.auth["logged_in"]:
                         LEFT JOIN tbl_ClientFees cf ON ca.case_id = cf.case_id
                         WHERE pp.passport_number = ?"""
             elif search_type == "Application Number":
-                query = "SELECT * FROM tbl_ApplicationDetails WHERE application_no = ?"
+                query = """SELECT ca.*, pp.passport_number, ad.apprif_no, ad.application_no, ad.total_fees, 
+                                cf.total_payment_received, cf.payment_mode, cf.bank_number
+                        FROM tbl_Case ca
+                        LEFT JOIN tbl_Passport pp ON ca.case_id = pp.case_id
+                        LEFT JOIN tbl_ApplicationDetails ad ON ca.case_id = ad.case_id
+                        LEFT JOIN tbl_ClientFees cf ON ca.case_id = cf.case_id
+                        WHERE ad.application_no = ?"""
             elif search_type == "Apprif Number":
-                query = "SELECT * FROM tbl_ApplicationDetails WHERE apprif_no = ?"
+                query = """SELECT ca.*, pp.passport_number, ad.apprif_no, ad.application_no, ad.total_fees, 
+                                cf.total_payment_received, cf.payment_mode, cf.bank_number
+                        FROM tbl_Case ca
+                        LEFT JOIN tbl_Passport pp ON ca.case_id = pp.case_id
+                        LEFT JOIN tbl_ApplicationDetails ad ON ca.case_id = ad.case_id
+                        LEFT JOIN tbl_ClientFees cf ON ca.case_id = cf.case_id
+                        WHERE ad.apprif_no = ?"""
 
             result = pd.read_sql_query(query, conn, params=(search_value,))
-            st.session_state.search_result = result  # store result
+            st.session_state.search_result = result
 
         result = st.session_state.search_result
 
         if not result.empty:
             case_id = result["case_id"].iloc[0]
             printed = c.execute("SELECT report_printed FROM tbl_Case WHERE case_id = ?", (case_id,)).fetchone()[0]
-            # printed = 0
             if printed:
                 st.warning("⚠️ This report has already been printed and cannot be reprinted.")
             else:
                 st.dataframe(result)
 
                 if st.button("🖨️ Print Report", key="print_btn"):
-                    st.write("🧪 Print button clicked")
                     filename = f"Visa_Report_{case_id}.pdf"
                     generate_visa_report_pdf(filename, result)
                     c.execute("UPDATE tbl_Case SET report_printed = 1 WHERE case_id = ?", (case_id,))
                     conn.commit()
                     with open(filename, "rb") as f:
                         st.download_button("Download Report", data=f, file_name=filename, mime="application/pdf")
-        else:
+        elif search_value:
             st.error("No records found.")
-
 
 
 
