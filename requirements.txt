@@ -101,7 +101,7 @@ networkx
 nibabel
 numpy
 oauthlib
-opencv-python
+opencv-python==4.5.5.64
 openpyxl
 opt-einsum
 outcome
